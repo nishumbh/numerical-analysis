@@ -35,8 +35,8 @@ def matrix_mult(A, B):
     for row in range(len(A)):
         for col in range(len(B[0])):
             for elt in range(len(B)):
-                intermediate = A[row][elt] * B[elt][col]  
-                C[row][col] += intermediate if intermediate > THRES else 0
+                intermediate = A[row][elt] * B[elt][col]
+                C[row][col] += intermediate if abs(intermediate) > THRES else 0
 
     return C
 
@@ -44,89 +44,79 @@ def printm(x, name="A"):
     # Nobody asks about this
     print(f"""{name} = [\n\t{"\n\t".join(" ".join(f"{v:6.2f}" if v!=0 else " "*6 for v in row) if isinstance(row, list) else str(round(row, 2)) for row in x)}\n]""")
 
+def forward_sub(L, b):
+    n = len(L)
+    y = [0.0]*n
+    for i in range(n):
+        y[i] = b[i] - sum(L[i][j]*y[j] for j in range(i))
+    return y
 
+def back_sub(U, y):
+    n = len(U)
+    x = [0.0]*n
+    for i in range(n-1, -1, -1):
+        x[i] = (y[i] - sum(U[i][j]*x[j] for j in range(i+1, n))) / U[i][i]
+    return x
 
-def mult_with_factor(A, factor, rowIdx, colIdx):
-    n = len(A)
-    # Build elementary matrix for L
-    dI = [
-        [1.0 if cx == rx else factor if cx == colIdx and rx == rowIdx else 0.0 for cx in range(n)]
-        for rx in range(n)
-    ]
-    
-    # Instead of full matrix multiply, apply factor in-place
-    pivot_row = rowIdx - 1
-    while pivot_row >= 0 and abs(A[pivot_row][colIdx]) < THRES:
-        pivot_row -= 1
-
-    for j in range(len(A[rowIdx])):
-        A[rowIdx][j] += factor * A[pivot_row][j]
-        # Optional: zero-out very small numbers
-        if abs(A[rowIdx][j]) < THRES:
-            A[rowIdx][j] = 0.0
-
-    return A, dI
-
-def mult_b_with_factor(b, factor, row_to, row_from):
-    b[row_to] += factor * b[row_from]
-    if abs(b[row_to]) < THRES:
-        b[row_to] = 0.0
+def matvec(A, x):
+    return [sum(A[i][j]*x[j] for j in range(len(x))) for i in range(len(A))]
 
 # Iteration 1
 # Only for MxM matrices
 def ga(A, b=None):
-    dE_A = {}
-    for rowIdx in range(len(A)):
-        for colIdx in range(len(A[rowIdx])):
-            if rowIdx == colIdx:
-                break
+    n = len(A)
+    L = [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
 
-            # Current cell to make 0 = A[rowIdx][colIdx]
-            # Factor to multiply the cell by = A[rowIdx-1][colIdx]
+    for rowIdx in range(n):
+        for colIdx in range(rowIdx):  # only below diagonal
 
             curr_cell = A[rowIdx][colIdx]
-            if curr_cell == 0:
+            if abs(curr_cell) < THRES:
+                A[rowIdx][colIdx] = 0.0
                 continue
 
-            fac_cell = 0
-            cnt = 1
-            while fac_cell == 0: fac_cell = A[rowIdx-cnt][colIdx]; cnt += 1
+            pivot = rowIdx - 1
+            while pivot >= 0 and abs(A[pivot][colIdx]) < THRES:
+                pivot -= 1
 
-            factor = -1 * (curr_cell/fac_cell)
-            A, dE_A[f"{rowIdx}{colIdx}"] = mult_with_factor(**{
-                "A": A,
-                "factor": factor,
-                "rowIdx": rowIdx,
-                "colIdx": colIdx
-            })
+            if pivot < 0:
+                raise ZeroDivisionError("No valid pivot found")
 
-            mult_b_with_factor(b, factor, rowIdx, rowIdx-cnt+1)
+            fac_cell = A[pivot][colIdx]
+            factor = -curr_cell / fac_cell
 
-        #     printm(b)
-        #     printm(A, f"A{rowIdx}{colIdx}")
-        #     printm(b, f"b{rowIdx}{colIdx}")
-        #
-        #
-        # print()
+            for j in range(colIdx, n):
+                A[rowIdx][j] += factor * A[pivot][j]
+                if abs(A[rowIdx][j]) < THRES:
+                    A[rowIdx][j] = 0.0
 
-    # print("Eliminations:")
-    # [printm(val, key) for key, val in dE_A.items()]
+            if b is not None:
+                b[rowIdx] += factor * b[pivot]
+                if abs(b[rowIdx]) < THRES:
+                    b[rowIdx] = 0.0
 
-    aL = list(dE_A.values())
-    L = aL[0]
-    for dL in aL[1:]:
-        L = matrix_mult(L, dL)
+            L[rowIdx][pivot] = -factor
 
-    printm(L, "L")
-    return A, b
+    return A, b, L
 
 n = 50
-a = make_diagonally_dominant_matrix(n, 69)
-b = make_rhs(n, int(time()))
-U, fb = ga(a, b)
+A0 = make_diagonally_dominant_matrix(n, 69)
+b0 = make_rhs(n, 123)
 
-print("\n\n\n")
-printm(U, "U")
-printm(fb, "fb")
+U, fb, L = ga([row[:] for row in A0], b0[:])
 
+A_recon = matrix_mult(L, U)
 
+y = forward_sub(L, fb)
+x = back_sub(U, y)
+
+max_err = max(
+    abs(A0[i][j] - A_recon[i][j])
+    for i in range(n)
+    for j in range(n)
+)
+print("reconstruction error:", max_err)
+
+r = matvec(A0, x)
+residual = max(abs(r[i] - b0[i]) for i in range(n))
+print("residual:", residual)
