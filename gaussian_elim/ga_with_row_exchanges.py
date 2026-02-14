@@ -7,7 +7,6 @@ from helpers.matrix import Matrix
 
 THRES = 1e-10
 
-
 def forward_sub(*, L: Matrix, P:Matrix, b: Matrix):
     Pb = P @ b
     n = L.rows

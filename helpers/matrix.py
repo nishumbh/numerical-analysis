@@ -22,6 +22,10 @@ class Matrix:
     def is_square(self):
         return self.rows == self.cols
 
+    @property
+    def T(self):
+        return self.transpose()
+
     # -------------------------------
 
     def _validate(self):
@@ -37,6 +41,17 @@ class Matrix:
         if self.shape != other.shape:
             raise ArithmeticError("Shape mismatch")
 
+    def transpose(self, inplace=True):
+        t = Matrix.from_shape(self.cols, self.rows)
+        for i in range(self.rows):
+            for j in range(self.cols):
+                t[j, i] = self.matrix[i, j]
+
+        if inplace:
+            self.matrix = t.matrix
+            return
+
+        return t
     # -------------------------------
 
     @staticmethod
@@ -169,14 +184,3 @@ class Matrix:
 
     # -------------------------------
 
-    def T(self, inplace=True):
-        t = Matrix.from_shape(self.cols, self.rows)
-        for i in range(self.rows):
-            for j in range(self.cols):
-                t[j, i] = self.matrix[i][j]
-
-        if inplace:
-            self.matrix = t.matrix
-            return
-
-        return t
